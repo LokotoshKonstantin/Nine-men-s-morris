@@ -76,23 +76,28 @@ def numOfValue(board, value):
     return board.count(value)
 
 
-def stage23Moves(board, color_user, color_algorithm):
-    if numOfValue(board, color_algorithm) == 3:
-        return stage3Moves(board, color_user, color_algorithm)
-    else:
-        return stage2Moves(board, color_user, color_algorithm)
-
-
-def stage1Moves(board, color_user, color_algorithm):
-    board_list = []
+def getPossibleMillCount(board, player):
+    count = 0
     for i in range(len(board)):
         if board[i] == "X":
-            board_clone = copy.deepcopy(board)
-            board_clone[i] = color_algorithm
-            if close_mill(i, board_clone):
-                board_list = removePiece(board_clone, board_list, color_user)
-            else:
-                board_list.append(board_clone)
+            if check_mill_formation(i, board, player):
+                count += 1
+    return count
+
+
+def stage3Moves(board, color_user, color_algorithm):
+    board_list = []
+    for i in range(len(board)):
+        if board[i] == color_algorithm:
+            for j in range(len(board)):
+                if board[j] == "X":
+                    board_clone = copy.deepcopy(board)
+                    board_clone[i] = "X"
+                    board_clone[j] = color_algorithm
+                    if close_mill(j, board_clone):
+                        board_list = removePiece(board_clone, board_list, color_user)
+                    else:
+                        board_list.append(board_clone)
     return board_list
 
 
@@ -113,51 +118,62 @@ def stage2Moves(board, color_user, color_algorithm):
     return board_list
 
 
-def stage3Moves(board, color_user, color_algorithm):
-    board_list = []
-    for i in range(len(board)):
-        if board[i] == color_algorithm:
-            for j in range(len(board)):
-                if board[j] == "X":
-                    board_clone = copy.deepcopy(board)
-                    board_clone[i] = "X"
-                    board_clone[j] = color_algorithm
-                    if close_mill(j, board_clone):
-                        board_list = removePiece(board_clone, board_list, color_user)
-                    else:
-                        board_list.append(board_clone)
-    return board_list
+def stage23Moves(board, color_user, color_algorithm):
+    if numOfValue(board, color_algorithm) == 3:
+        return stage3Moves(board, color_user, color_algorithm)
+    else:
+        return stage2Moves(board, color_user, color_algorithm)
 
 
-def alphaBetaPruning(board, depth, player1, alpha, beta, isStage1, heuristic, color_user, color_algorithm):
+def numberOfPiecesHeuristic(board, color_user, color_algorithm):
+    numPlayerOneTokens = numOfValue(board, color_algorithm)
+    numPlayerTwoTokens = numOfValue(board, color_user)
+    movablePiecesBlack = len(stage23Moves(board, color_user, color_algorithm))
+    if numPlayerTwoTokens <= 2 or movablePiecesBlack == 0:
+        evaluation = float('inf')
+    elif numPlayerOneTokens <= 2:
+        evaluation = float('-inf')
+    else:
+        evaluation = 200 * (numPlayerOneTokens - numPlayerTwoTokens)
+    return evaluation
+
+
+def getEvaluationStage23(board, color_user, color_algorithm):
+    numWhitePieces = numOfValue(board, color_algorithm)
+    numBlackPieces = numOfValue(board, color_user)
+    mills = getPossibleMillCount(board, color_algorithm)
+    evaluation = 0
+    board_list = stage23Moves(board, color_user, color_algorithm)
+    numBlackMoves = len(board_list)
+    if numBlackPieces <= 2 or numBlackPieces == 0:
+        return float('inf')
+    elif numWhitePieces <= 2:
+        return float('-inf')
+    else:
+        return 0
+
+
+def alphaBetaPruning(board, depth, player1, alpha, beta, heuristic, color_user, color_algorithm):
     finalEvaluation = evaluator()
     global states_reached
     states_reached += 1
     if depth != 0:
         currentEvaluation = evaluator()
         if player1:
-            if isStage1:
-                possible_configs = stage1Moves(board, color_user, color_algorithm)
-            else:
-                possible_configs = stage23Moves(board, color_user, color_algorithm)
+            possible_configs = stage23Moves(board, color_user, color_algorithm)
         else:
-            if isStage1:
-                possible_configs = generateInvertedBoardList(
-                    stage1Moves(InvertedBoard(board, color_user, color_algorithm), color_user, color_algorithm),
-                    color_user, color_algorithm)
-            else:
-                possible_configs = generateInvertedBoardList(
-                    stage23Moves(InvertedBoard(board, color_user, color_algorithm), color_user, color_algorithm),
-                    color_user, color_algorithm)
+            possible_configs = generateInvertedBoardList(stage23Moves(InvertedBoard(board, color_user, color_algorithm),
+                                                                      color_user, color_algorithm),
+                                                         color_user, color_algorithm)
         for move in possible_configs:
             if player1:
-                currentEvaluation = alphaBetaPruning(move, depth - 1, False, alpha, beta, isStage1, heuristic,
+                currentEvaluation = alphaBetaPruning(move, depth - 1, False, alpha, beta, heuristic,
                                                      color_user, color_algorithm)
                 if currentEvaluation.evaluator > alpha:
                     alpha = currentEvaluation.evaluator
                     finalEvaluation.board = move
             else:
-                currentEvaluation = alphaBetaPruning(move, depth - 1, True, alpha, beta, isStage1, heuristic,
+                currentEvaluation = alphaBetaPruning(move, depth - 1, True, alpha, beta, heuristic,
                                                      color_user, color_algorithm)
                 if currentEvaluation.evaluator < beta:
                     beta = currentEvaluation.evaluator
@@ -172,59 +188,63 @@ def alphaBetaPruning(board, depth, player1, alpha, beta, isStage1, heuristic, co
             finalEvaluation.evaluator = beta
     else:
         if player1:
-            finalEvaluation.evaluator = heuristic(board, isStage1)
+            finalEvaluation.evaluator = heuristic(board, color_user, color_algorithm)
         else:
-            finalEvaluation.evaluator = heuristic(InvertedBoard(board, color_user, color_algorithm), isStage1)
+            finalEvaluation.evaluator = heuristic(InvertedBoard(board, color_user, color_algorithm),
+                                                  color_user, color_algorithm)
+
     return finalEvaluation
 
 
-def numberOfPiecesHeuristic(board, color_algorithm, color_user):
+def AdvancedHeuristic(board, color_user, color_algorithm):
+    evaluation = 0
     numPlayerOneTokens = numOfValue(board, color_algorithm)
     numPlayerTwoTokens = numOfValue(board, color_user)
-
-    movablePiecesBlack = 0
-
-    if not color_algorithm:
-        movablePiecesBlack = len(stage23Moves(board, color_user, color_algorithm))
-
-    if not color_algorithm:
-        if numPlayerTwoTokens <= 2 or movablePiecesBlack == 0:
-            evaluation = float('inf')
-        elif numPlayerOneTokens <= 2:
-            evaluation = float('-inf')
-        else:
-            evaluation = 200 * (numPlayerOneTokens - numPlayerTwoTokens)
+    numPossibleMillsPlayer1 = getPossibleMillCount(board, color_algorithm)
+    numPossibleMillsPlayer2 = getPossibleMillCount(board, color_user)
+    moveablePiecesPlayer1 = 0
+    moveablePiecesPlayer2 = 0
+    movablePiecesBlack = len(stage23Moves(board, color_user, color_algorithm))
+    potentialMillsPlayer1 = getPiecesInPotentialMillFormation(board, color_algorithm, color_user, color_algorithm)
+    potentialMillsPlayer2 = getPiecesInPotentialMillFormation(board, color_user, color_user, color_algorithm)
+    if numPlayerTwoTokens <= 2 or movablePiecesBlack == 0:
+        evaluation = float('inf')
+    elif numPlayerOneTokens <= 2:
+        evaluation = float('-inf')
     else:
-        evaluation = 100 * (numPlayerOneTokens - numPlayerTwoTokens)
+        if numPlayerOneTokens < 4:
+            evaluation += 100 * numPossibleMillsPlayer1
+            evaluation += 200 * potentialMillsPlayer2
+        else:
+            evaluation += 200 * numPossibleMillsPlayer1
+            evaluation += 100 * potentialMillsPlayer2
+        evaluation -= 25 * movablePiecesBlack
+        evaluation += 50 * (numPlayerOneTokens - numPlayerTwoTokens)
 
     return evaluation
 
 
-def getEvaluationStage23(board, color_user, color_algorithm):
-
-    numWhitePieces = numOfValue(board, color_algorithm)
-    numBlackPieces = numOfValue(board, color_user)
-    mills = getPossibleMillCount(board, color_algorithm)
-
-    evaluation = 0
-
-    board_list = stage23Moves(board, color_user, color_algorithm)
-
-    numBlackMoves = len(board_list)
-
-    if numBlackPieces <= 2 or numBlackPieces == 0:
-        return float('inf')
-    elif numWhitePieces <= 2:
-        return float('-inf')
-    else:
-        return 0
-
-
-def getPossibleMillCount(board, player):
-
+def getPiecesInPotentialMillFormation(board, player, color_user, color_algorithm):
     count = 0
     for i in range(len(board)):
-        if board[i] == "X":
-            if check_mill_formation(i, board, player):
-                count += 1
+        if board[i] == player:
+            adjacent_list = neighbourhood(i)
+            for pos in adjacent_list:
+                if player == color_algorithm:
+                    if board[pos] == color_user:
+                        board[i] = color_user
+                        if close_mill(i, board):
+                            count += 1
+                        board[i] = player
+                else:
+                    if board[pos] == color_algorithm and potentialMillInFormation(pos, board, color_algorithm):
+                        count += 1
     return count
+
+
+def potentialMillInFormation(position, board, player):
+    adjacent_list = neighbourhood(position)
+    for i in adjacent_list:
+        if (board[i] == player) and (not check_mill_formation(position, board, player)):
+            return True
+    return False
